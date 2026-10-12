@@ -28,6 +28,11 @@ pub enum SuSFSSubCommands {
         command: ConfigCommand,
     },
 
+    Lkm {
+        #[command(subcommand)]
+        command: crate::android::susfs::lkm::LkmCommand,
+    },
+
     /// Added path and all its sub-paths will be hidden for umounted app process from several syscalls.
     ///
     /// Please be reminded that if the target path has upper mounts then make sure the proper layer is added,
@@ -279,6 +284,7 @@ pub fn run_from_args(args: &[String]) -> Result<()> {
 pub fn run_main(args: SusfsArgs) -> Result<()> {
     match args.command {
         SuSFSSubCommands::Config { command } => run_config(command)?,
+        SuSFSSubCommands::Lkm { command } => crate::android::susfs::lkm::run(command)?,
         SuSFSSubCommands::AddSusPath { path } => {
             api::add_sus_path(&path, false)?;
         }

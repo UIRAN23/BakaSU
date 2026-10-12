@@ -66,7 +66,11 @@ mod android {
 
     pub fn ensure_binaries(ignore_if_exist: bool) -> anyhow::Result<()> {
         for file in Asset::iter() {
-            if file == "ksuinit" || file == "waitsys" || file.ends_with(".ko") {
+            if file == "ksuinit"
+                || file == "waitsys"
+                || file == "susfs-lkm.json"
+                || file.ends_with(".ko")
+            {
                 // don't extract internal executables and kernel modules
                 continue;
             }

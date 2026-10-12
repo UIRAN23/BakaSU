@@ -19,6 +19,7 @@ on:
 
 jobs:
   prepare:
+    if: github.repository == 'Baka-SU/BakaSU'
     runs-on: ubuntu-latest
     outputs:
       expected_size: ${{ steps.extract.outputs.expected_size }}
@@ -92,6 +93,7 @@ jobs:
     secrets: inherit
 
   build-ksuinit:
+    if: github.repository == 'Baka-SU/BakaSU'
     uses: ./.github/workflows/ksuinit.yml
 
   build-ksud:
@@ -363,7 +365,7 @@ jobs:
 
   telegram-bot-api:
     name: Telegram Bot API
-    if: github.event_name != 'pull_request' && github.event_name != 'workflow_call'
+    if: github.repository == 'Baka-SU/BakaSU' && github.event_name != 'pull_request' && github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -400,7 +402,7 @@ jobs:
 
   upload-telegram:
     needs: [repack-manager, telegram-bot-api]
-    if: github.event_name != 'pull_request' && github.event_name != 'workflow_call'
+    if: github.repository == 'Baka-SU/BakaSU' && github.event_name != 'pull_request' && github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     strategy:
       matrix:

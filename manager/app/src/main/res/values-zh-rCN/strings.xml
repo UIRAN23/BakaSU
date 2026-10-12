@@ -566,4 +566,18 @@
     <string name="enable_adb_summary">强制允许 USB 调试并取消 adb 认证，非必要请勿开启！</string>
     <string name="install_force_backup">备份为原厂镜像</string>
     <string name="install_force_backup_summary">请确保你选择的 boot 镜像是原厂镜像</string>
+    <string name="settings_susfs_lkm">SUSFS 内核模块</string>
+    <string name="settings_susfs_lkm_autoload">开机加载 SUSFS</string>
+    <string name="settings_susfs_lkm_autoload_summary">使用内置的 SUSFS 内核模块。默认关闭。</string>
+    <string name="settings_susfs_lkm_status">加载状态</string>
+    <string name="settings_susfs_lkm_loaded">已由 BakaSU 加载</string>
+    <string name="settings_susfs_lkm_already_active">已有 SUSFS 正在运行</string>
+    <string name="settings_susfs_lkm_disabled">自动加载已关闭</string>
+    <string name="settings_susfs_lkm_pending">等待重启</string>
+    <string name="settings_susfs_lkm_failed">加载失败</string>
+    <string name="settings_susfs_lkm_recovery_disabled">因上次启动失败而关闭</string>
+    <string name="settings_susfs_lkm_unsupported">不支持此内核</string>
+    <string name="settings_susfs_lkm_unavailable">没有可用的内置模块</string>
+    <string name="settings_susfs_lkm_version_summary">%1$s · %2$s</string>
+    <string name="settings_susfs_lkm_reboot_summary">更改将在完整重启后生效。启用此选项前，请先关闭独立的 SUSFS LKM 加载器。</string>
 </resources>

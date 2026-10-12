@@ -1,0 +1,199 @@
+name: Build native SUSFS LKM test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/native-susfs-lkm]
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  KSU_PACKAGE_NAME: org.bakasu.bakasu.susfslkm
+  KSU_NAME: BakaSU SUSFS LKM
+
+jobs:
+  build:
+    if: github.repository == 'UIRAN23/BakaSU'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Obtain pinned native payloads and sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, io, json, os, re, tarfile, urllib.parse, urllib.request, zipfile
+          from pathlib import Path
+
+          class Redirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, fp, code, message, headers, url):
+                  redirected = super().redirect_request(request, fp, code, message, headers, url)
+                  if redirected and urllib.parse.urlparse(url).netloc != urllib.parse.urlparse(request.full_url).netloc:
+                      redirected.remove_header('Authorization')
+                  return redirected
+
+          def download(url):
+              headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'User-Agent': 'BakaSU-native-SUSFS-test'}
+              with urllib.request.build_opener(Redirect()).open(urllib.request.Request(url, headers=headers), timeout=60) as response:
+                  return response.read()
+
+          destination = Path('userspace/ksud/bin/aarch64')
+          sources = Path('native-susfs-sources')
+          sources.mkdir()
+          susfs_commit = '3ca6bdf5d6fb8e3a22b1f8f2a88305ce0111d7cd'
+          baka_commit = 'f6cb7e70c10ebde149f3121ae68b945514fd0801'
+          payloads = [
+              ('inforcqb/susfs4ksu-lkm', 38120855249, susfs_commit, 'susfs_guard_lkm.ko-android14-6.1', 'susfs_guard_lkm.ko', 'susfs_guard_lkm-android14-6.1.ko', '0a14fed58e08efad89d637ca7a2cd1f65ba3bab08c6888e2be5ab85209564ae0'),
+              ('Baka-SU/BakaSU', 38152678560, baka_commit, 'aarch64-android14-6.1-lkm', 'android14-6.1_kernelsu.ko', 'android14-6.1_kernelsu.ko', '0ba993ae7a916fab471ec6999db4eb4966761eef6d59cb7a8e2ac4ade6640ba7'),
+              ('Baka-SU/BakaSU', 38152678560, baka_commit, 'ksuinit-aarch64', 'ksuinit', 'ksuinit', '1e33f6a890a5ae0fe55ff07bc5396d30fedfc3feb563952d1e69a53c57618794'),
+          ]
+          provenance = []
+          for repo, run_id, commit, artifact_name, file_name, output_name, expected_sha in payloads:
+              api = 'https://api.github.com/repos/' + repo
+              run = json.loads(download(f'{api}/actions/runs/{run_id}'))
+              if run['head_sha'] != commit or run['head_repository']['full_name'] != repo or run['status'] != 'completed' or run['conclusion'] != 'success':
+                  raise RuntimeError(f'Untrusted or unsuccessful upstream run: {repo}/{run_id}')
+              artifacts = json.loads(download(f'{api}/actions/runs/{run_id}/artifacts?per_page=100'))['artifacts']
+              matches = [a for a in artifacts if a['name'] == artifact_name and not a['expired']]
+              if len(matches) != 1:
+                  raise RuntimeError(f'Missing, expired or ambiguous artifact: {artifact_name}')
+              artifact = matches[0]
+              if artifact['workflow_run']['head_sha'] != commit:
+                  raise RuntimeError(f'Artifact belongs to another commit: {artifact_name}')
+              archive = download(f'{api}/actions/artifacts/{artifact["id"]}/zip')
+              if 'sha256:' + hashlib.sha256(archive).hexdigest() != artifact.get('digest'):
+                  raise RuntimeError(f'GitHub artifact digest mismatch: {artifact_name}')
+              with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+                  entries = [item for item in zipped.infolist() if not item.is_dir()]
+                  if len(entries) != 1 or Path(entries[0].filename).name != file_name:
+                      raise RuntimeError(f'Unexpected artifact contents: {artifact_name}')
+                  binary = zipped.read(entries[0])
+              if hashlib.sha256(binary).hexdigest() != expected_sha:
+                  raise RuntimeError(f'Pinned payload digest mismatch: {output_name}')
+              (destination / output_name).write_bytes(binary)
+              provenance.append({'repository': repo, 'run_id': run_id, 'source_commit': commit, 'artifact_id': artifact['id'], 'archive_digest': artifact['digest'], 'file': output_name, 'sha256': expected_sha})
+
+          source_url = f'https://codeload.github.com/inforcqb/susfs4ksu-lkm/tar.gz/{susfs_commit}'
+          source = download(source_url)
+          (sources / 'susfs-lkm-3ca6bdf-upstream-source.tar.gz').write_bytes(source)
+          with tarfile.open(fileobj=io.BytesIO(source), mode='r:gz') as archive:
+              license_file, = [member for member in archive.getmembers() if member.name.endswith('/LICENSE') and member.isfile()]
+              license_text = archive.extractfile(license_file).read()
+              if hashlib.sha256(license_text).hexdigest() != '640d90f6ee401241ff62834d0d1b33f83049e99b8bfdfa04ed1b0a1635dde3e7':
+                  raise RuntimeError('Unexpected upstream SUSFS license')
+              (sources / 'SUSFS-LICENSE').write_bytes(license_text)
+              abi_file, = [member for member in archive.getmembers() if member.name.endswith('/kernel/susfs_abi.h') and member.isfile()]
+              abi = archive.extractfile(abi_file).read().decode()
+              version, = re.findall(r'^#define SUSFS_VERSION_STR "([^"]+)"', abi, flags=re.M)
+          metadata = {'version': version + '-ci-3ca6bdf', 'source_commit': susfs_commit, 'kmi': 'android14-6.1', 'file': payloads[0][5], 'sha256': payloads[0][6]}
+          (destination / 'susfs-lkm.json').write_text(json.dumps(metadata, indent=2) + '\n')
+          (sources / 'payload-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+          (sources / 'BakaSU-LICENSE').write_bytes(Path('LICENSE').read_bytes())
+          (sources / 'SOURCES.txt').write_text(f'SUSFS unchanged binary source: {source_url}\nBakaSU baseline native payload source: https://github.com/Baka-SU/BakaSU/tree/{baka_commit}\nModified BakaSU APK/ksud source: https://github.com/{os.environ["GITHUB_REPOSITORY"]}/tree/{os.environ["GITHUB_SHA"]}\n')
+          print(json.dumps(metadata))
+          PY
+          git merge-base --is-ancestor f6cb7e70c10ebde149f3121ae68b945514fd0801 HEAD
+          git archive --format=tar.gz --prefix=BakaSU/ HEAD > native-susfs-sources/BakaSU-test-source.tar.gz
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Prepare Android SDK
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'build-tools;36.1.0' 'ndk;30.0.16248370'
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/30.0.16248370" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-linux-android
+          components: rust-src,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: userspace/ksud
+
+      - name: Build native daemon
+        run: |
+          cargo install cargo-ndk --locked
+          cargo fmt --manifest-path userspace/ksud/Cargo.toml --check
+          clang --target=aarch64-linux-gnu -c -nostdlib -o userspace/ksud/.lkm_image_bootstrap.o userspace/ksud/src/lkm_image_bootstrap.S
+          cd userspace/ksud
+          cargo clean -p ksud
+          cargo ndk b -P 26 -t aarch64-linux-android -r --locked -Z build-std-features=optimize_for_size -Z trim-paths
+          mkdir -p ../../target/aarch64-linux-android/release
+          cp target/aarch64-linux-android/release/ksud ../../target/aarch64-linux-android/release/ksud
+
+      - name: Check and build manager
+        working-directory: manager
+        run: |
+          ./gradlew spotlessApply --no-configuration-cache
+          git diff --exit-code -- .
+          ./gradlew spotlessCheck assembleRelease lintDebug --no-configuration-cache -PKSU_PACKAGE_NAME="$KSU_PACKAGE_NAME" -PKSU_NAME="$KSU_NAME"
+
+      - name: Repack and sign arm64 test APK
+        env:
+          TEST_KEYSTORE: ${{ secrets.NATIVE_TEST_KEYSTORE }}
+          TEST_STORE_PASSWORD: ${{ secrets.NATIVE_TEST_KEYSTORE_PASSWORD }}
+          TEST_KEY_PASSWORD: ${{ secrets.NATIVE_TEST_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, shutil
+          from pathlib import Path
+          for name in ('TEST_KEYSTORE', 'TEST_STORE_PASSWORD', 'TEST_KEY_PASSWORD'):
+              if not os.environ.get(name):
+                  raise RuntimeError(f'Missing persistent test signing secret: {name}')
+          key = Path(os.environ['RUNNER_TEMP']) / 'native-susfs-test.jks'
+          key.write_bytes(base64.b64decode(os.environ['TEST_KEYSTORE'], validate=True))
+          metadata = json.loads(Path('manager/app/build/outputs/apk/release/output-metadata.json').read_text())
+          arm64, = [item for item in metadata['elements'] if any(f['filterType'] == 'ABI' and f.get('value', f.get('identifier')) == 'arm64-v8a' for f in item['filters'])]
+          directory = Path('manager/app/build/outputs/apk/native-test')
+          directory.mkdir()
+          shutil.copyfile(Path('manager/app/build/outputs/apk/release') / arm64['outputFile'], directory / 'native-test-unsigned.apk')
+          config = {'app_build_type': 'native-test', 'ksud_build_type': 'release', 'arch': ['arm64-v8a'], 'output_name': 'BakaSU-SUSFS-LKM-arm64', 'strip': False, 'signing': {'keystore_path': str(key), 'key_alias': 'native-susfs-test', 'keystore_pass': os.environ['TEST_STORE_PASSWORD'], 'key_pass': os.environ['TEST_KEY_PASSWORD']}}
+          (Path(os.environ['RUNNER_TEMP']) / 'native-repack.json').write_text(json.dumps(config))
+          PY
+          python3 repack_apk.py repack --config "$RUNNER_TEMP/native-repack.json"
+          python3 - <<'PY'
+          import hashlib, zipfile
+          from pathlib import Path
+          daemon = Path('target/aarch64-linux-android/release/ksud').read_bytes()
+          with zipfile.ZipFile('dist/BakaSU-SUSFS-LKM-arm64.apk') as apk:
+              if apk.read('lib/arm64-v8a/libksud.so') != daemon:
+                  raise RuntimeError('The signed APK does not contain the newly built daemon')
+          Path('native-susfs-sources/ksud.sha256').write_text(hashlib.sha256(daemon).hexdigest() + '  lib/arm64-v8a/libksud.so\n')
+          PY
+          "$ANDROID_SDK_ROOT/build-tools/36.1.0/apksigner" verify --verbose --print-certs dist/BakaSU-SUSFS-LKM-arm64.apk
+          sha256sum dist/BakaSU-SUSFS-LKM-arm64.apk > native-susfs-sources/BakaSU-SUSFS-LKM-arm64.apk.sha256
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          Install `BakaSU-SUSFS-LKM-arm64.apk` alongside the official manager. Package: `org.bakasu.bakasu.susfslkm`.
+
+          In the current trusted manager, select **BakaSU SUSFS LKM** under **Dynamic Manager**, then open the test app.
+
+          Verify the installed daemon before enabling native loading: `su -c '/data/adb/ksud susfs lkm status'`.
+
+          Existing external SUSFS loader modules must be disabled before testing native boot loading. No kernel flashing is required.
+          EOF
+
+      - name: Upload installable test APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/BakaSU-SUSFS-LKM-arm64.apk
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload corresponding sources and licenses
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-susfs-sources-and-checksums
+          path: native-susfs-sources/*
+          if-no-files-found: error

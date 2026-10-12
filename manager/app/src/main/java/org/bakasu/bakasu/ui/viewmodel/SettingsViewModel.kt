@@ -17,6 +17,7 @@ import org.bakasu.bakasu.R
 import org.bakasu.bakasu.domain.model.AppearanceSetting
 import org.bakasu.bakasu.domain.model.PlatformSetting
 import org.bakasu.bakasu.domain.model.SettingsPlatformSnapshot
+import org.bakasu.bakasu.domain.model.SuSFSLkmStatus
 import org.bakasu.bakasu.domain.model.coerceCompatibleWith
 import org.bakasu.bakasu.domain.usecase.ConfigureSuLogUseCase
 import org.bakasu.bakasu.domain.usecase.GetKernelFeatureSettingsUseCase
@@ -26,6 +27,7 @@ import org.bakasu.bakasu.domain.usecase.SetDefaultUmountModulesUseCase
 import org.bakasu.bakasu.domain.usecase.SetKernelUmountEnabledUseCase
 import org.bakasu.bakasu.domain.usecase.SetSelinuxHideEnabledUseCase
 import org.bakasu.bakasu.domain.usecase.SetSuEnabledUseCase
+import org.bakasu.bakasu.domain.usecase.SuSFSLkmUseCase
 import org.bakasu.bakasu.domain.usecase.UpdateAppearanceUseCase
 import org.bakasu.bakasu.domain.usecase.UpdatePlatformSettingUseCase
 
@@ -102,6 +104,8 @@ data class SettingsUiState(
     val useSoftReboot: Boolean = false,
     val enableSwipeDismiss: Boolean = true,
     val pagerInterceptionMode: Int = 1,
+    val susfsLkmStatus: SuSFSLkmStatus? = null,
+    val isSusfsLkmChanging: Boolean = false,
 )
 
 sealed interface SettingsUiAction {
@@ -143,6 +147,8 @@ sealed interface SettingsUiAction {
     data class SetUseSoftReboot(val enabled: Boolean) : SettingsUiAction
     data class SetSwipeDismiss(val enabled: Boolean) : SettingsUiAction
     data class SetPagerInterceptionMode(val index: Int) : SettingsUiAction
+    data object LoadSuSFSLkmStatus : SettingsUiAction
+    data class SetSuSFSLkmEnabled(val enabled: Boolean) : SettingsUiAction
 }
 
 sealed interface SettingsUiEvent {
@@ -162,6 +168,7 @@ class SettingsViewModel(
     private val setSuLogEnabled: ConfigureSuLogUseCase,
     private val setSelinuxHideEnabled: SetSelinuxHideEnabledUseCase,
     private val setDefaultUmountModules: SetDefaultUmountModulesUseCase,
+    private val susfsLkm: SuSFSLkmUseCase,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
@@ -417,6 +424,39 @@ class SettingsViewModel(
         updatePlatformAsync(PlatformSetting.UseSoftReboot(enabled))
     }
 
+    private fun loadSuSFSLkmStatus() {
+        viewModelScope.launch {
+            val status = susfsLkm.getStatus()
+            mutableState.update { it.copy(susfsLkmStatus = status) }
+            if (status == null) {
+                mutableEvents.emit(SettingsUiEvent.Message(R.string.susfs_operation_failed))
+            }
+        }
+    }
+
+    private fun setSuSFSLkmEnabled(enabled: Boolean) {
+        val current = state.value
+        val status = current.susfsLkmStatus ?: return
+        if (current.isSusfsLkmChanging || !status.supported || !status.available) return
+        mutableState.update { it.copy(isSusfsLkmChanging = true) }
+        viewModelScope.launch {
+            try {
+                if (susfsLkm.setEnabled(enabled)) {
+                    mutableState.update { it.copy(susfsLkmStatus = status.copy(enabled = enabled)) }
+                    mutableEvents.emit(SettingsUiEvent.Message(R.string.reboot_to_apply))
+                    val refreshed = susfsLkm.getStatus()
+                    if (refreshed != null) {
+                        mutableState.update { it.copy(susfsLkmStatus = refreshed) }
+                    }
+                } else {
+                    mutableEvents.emit(SettingsUiEvent.Message(R.string.susfs_operation_failed))
+                }
+            } finally {
+                mutableState.update { it.copy(isSusfsLkmChanging = false) }
+            }
+        }
+    }
+
     fun dispatch(action: SettingsUiAction) {
         when (action) {
             SettingsUiAction.Initialize -> initialize()
@@ -494,6 +534,10 @@ class SettingsViewModel(
 
             is SettingsUiAction.SetPagerInterceptionMode ->
                 handlePagerInterceptionModeChange(action.index)
+
+            SettingsUiAction.LoadSuSFSLkmStatus -> loadSuSFSLkmStatus()
+
+            is SettingsUiAction.SetSuSFSLkmEnabled -> setSuSFSLkmEnabled(action.enabled)
         }
     }
 

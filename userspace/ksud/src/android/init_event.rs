@@ -101,6 +101,10 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("init features failed: {e}");
     }
 
+    if let Err(e) = crate::android::susfs::lkm::on_post_fs_data() {
+        warn!("SUSFS LKM loader failed: {e:#}");
+    }
+
     // Load susfs config entries that must capture metadata before mounts/overlays.
     crate::android::susfs::init_event::on_post_fs_data();
 

@@ -45,6 +45,7 @@ import org.bakasu.bakasu.data.shell.ShortcutRepository
 import org.bakasu.bakasu.data.startup.ApplicationInitializationRepository
 import org.bakasu.bakasu.data.startup.StartupRepository
 import org.bakasu.bakasu.data.susfs.SuSFSConfigHelper
+import org.bakasu.bakasu.data.susfs.SuSFSLkmRepository
 import org.bakasu.bakasu.data.susfs.SuSFSRepository
 import org.bakasu.bakasu.data.system.HomeRuntimeRepository
 import org.bakasu.bakasu.data.system.HomeStateRepository
@@ -143,6 +144,7 @@ import org.bakasu.bakasu.domain.usecase.SetStringSetPreferenceUseCase
 import org.bakasu.bakasu.domain.usecase.SetSuEnabledUseCase
 import org.bakasu.bakasu.domain.usecase.StartKernelFlashUseCase
 import org.bakasu.bakasu.domain.usecase.SuSFSConfigUseCase
+import org.bakasu.bakasu.domain.usecase.SuSFSLkmUseCase
 import org.bakasu.bakasu.domain.usecase.TakeModuleUriPermissionUseCase
 import org.bakasu.bakasu.domain.usecase.TransliterateTextUseCase
 import org.bakasu.bakasu.domain.usecase.UpdateAppearanceUseCase
@@ -273,6 +275,7 @@ val repositoryModule = module {
     singleOf(::ProfileRepository)
     singleOf(::ProfileTemplateRepository)
     singleOf(::SuSFSConfigHelper)
+    singleOf(::SuSFSLkmRepository)
     singleOf(::SuSFSRepository)
     singleOf(::MonetCompatColorSource)
     singleOf(::ThemeRepository)
@@ -329,6 +332,7 @@ val useCaseModule = module {
     factoryOf(::GetDefaultUmountModulesUseCase)
     factoryOf(::GetSuSFSStatusUseCase)
     factoryOf(::SuSFSConfigUseCase)
+    factoryOf(::SuSFSLkmUseCase)
     factoryOf(::ApplyLanguageUseCase)
     factoryOf(::IsSystemLanguageSettingsUseCase)
     factoryOf(::LaunchSystemLanguageSettingsUseCase)

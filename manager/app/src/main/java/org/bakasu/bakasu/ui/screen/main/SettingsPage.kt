@@ -93,6 +93,7 @@ import org.bakasu.bakasu.ui.component.settings.SettingsBaseWidget
 import org.bakasu.bakasu.ui.component.settings.SettingsChooseWidget
 import org.bakasu.bakasu.ui.component.settings.SettingsJumpPageWidget
 import org.bakasu.bakasu.ui.component.settings.SettingsSwitchWidget
+import org.bakasu.bakasu.ui.component.settings.lazySegmentColumn
 import org.bakasu.bakasu.ui.navigation.LocalNavigator
 import org.bakasu.bakasu.ui.navigation.Route
 import org.bakasu.bakasu.ui.theme.CardConfig
@@ -127,9 +128,16 @@ fun SettingsPage(bottomPadding: Dp) {
     val generateBugreport = koinInject<GenerateBugreportUseCase>()
     val uiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
     val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
+    val susfsLkmTitle = stringResource(R.string.settings_susfs_lkm)
 
     LaunchedEffect(Unit) {
         settingsViewModel.dispatch(SettingsUiAction.LoadFeatureSettings)
+    }
+
+    LaunchedEffect(homeState.systemStatus.isFullFeatured) {
+        if (homeState.systemStatus.isFullFeatured) {
+            settingsViewModel.dispatch(SettingsUiAction.LoadSuSFSLkmStatus)
+        }
     }
 
     Scaffold(
@@ -367,6 +375,73 @@ fun SettingsPage(bottomPadding: Dp) {
                             }
                         },
                     )
+                }
+            }
+
+            if (homeState.systemStatus.isFullFeatured) {
+                val status = uiState.susfsLkmStatus
+                lazySegmentColumn(
+                    items = buildList {
+                        if (status?.supported == true && status.available) add("toggle")
+                        add("status")
+                        if (status?.version?.isNotEmpty() == true) add("version")
+                        add("reboot")
+                    },
+                    title = susfsLkmTitle,
+                    key = { _, item -> "susfs_lkm_$item" },
+                ) { _, item ->
+                    when (item) {
+                        "toggle" -> SettingsSwitchWidget(
+                            icon = Icons.TwoTone.Extension,
+                            title = stringResource(R.string.settings_susfs_lkm_autoload),
+                            description = stringResource(R.string.settings_susfs_lkm_autoload_summary),
+                            checked = status?.enabled == true,
+                            enabled = !uiState.isSusfsLkmChanging,
+                            onCheckedChange = { enabled ->
+                                settingsViewModel.dispatch(SettingsUiAction.SetSuSFSLkmEnabled(enabled))
+                            },
+                        )
+
+                        "status" -> {
+                            val description = when {
+                                status == null -> R.string.susfs_status_no_data
+
+                                !status.supported -> R.string.settings_susfs_lkm_unsupported
+
+                                !status.available -> R.string.settings_susfs_lkm_unavailable
+
+                                else -> when (status.state) {
+                                    "loaded" -> R.string.settings_susfs_lkm_loaded
+                                    "already_active" -> R.string.settings_susfs_lkm_already_active
+                                    "disabled" -> R.string.settings_susfs_lkm_disabled
+                                    "pending" -> R.string.settings_susfs_lkm_pending
+                                    "failed" -> R.string.settings_susfs_lkm_failed
+                                    "recovery_disabled" -> R.string.settings_susfs_lkm_recovery_disabled
+                                    "unsupported" -> R.string.settings_susfs_lkm_unsupported
+                                    "unavailable" -> R.string.settings_susfs_lkm_unavailable
+                                    else -> R.string.susfs_status_no_data
+                                }
+                            }
+                            SettingsBaseWidget(
+                                title = stringResource(R.string.settings_susfs_lkm_status),
+                                description = stringResource(description),
+                            )
+                        }
+
+                        "version" -> SettingsBaseWidget(
+                            title = stringResource(R.string.susfs_status_version),
+                            description = stringResource(
+                                R.string.settings_susfs_lkm_version_summary,
+                                status?.version.orEmpty(),
+                                status?.kmi.orEmpty(),
+                            ),
+                        )
+
+                        "reboot" -> SettingsBaseWidget(
+                            title = stringResource(R.string.reboot_to_apply),
+                            description = stringResource(R.string.settings_susfs_lkm_reboot_summary),
+                        )
+                    }
                 }
             }
 

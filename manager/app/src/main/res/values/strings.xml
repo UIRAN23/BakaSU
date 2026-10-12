@@ -569,4 +569,18 @@
     <string name="install_upload_lkm_file_summary">Use a custom .ko file instead of the built-in LKM</string>
     <string name="skip_ksud">Do not install ksud</string>
     <string name="skip_ksud_summary">Cancel ksud installation. Do not enable this unless absolutely necessary.</string>
+    <string name="settings_susfs_lkm">SUSFS kernel module</string>
+    <string name="settings_susfs_lkm_autoload">Load SUSFS at boot</string>
+    <string name="settings_susfs_lkm_autoload_summary">Use the bundled SUSFS kernel module. Disabled by default.</string>
+    <string name="settings_susfs_lkm_status">Loading status</string>
+    <string name="settings_susfs_lkm_loaded">Loaded by BakaSU</string>
+    <string name="settings_susfs_lkm_already_active">Existing SUSFS is active</string>
+    <string name="settings_susfs_lkm_disabled">Automatic loading disabled</string>
+    <string name="settings_susfs_lkm_pending">Waiting for reboot</string>
+    <string name="settings_susfs_lkm_failed">Loading failed</string>
+    <string name="settings_susfs_lkm_recovery_disabled">Disabled after a previous boot failure</string>
+    <string name="settings_susfs_lkm_unsupported">This kernel is not supported</string>
+    <string name="settings_susfs_lkm_unavailable">No bundled module is available</string>
+    <string name="settings_susfs_lkm_version_summary">%1$s · %2$s</string>
+    <string name="settings_susfs_lkm_reboot_summary">Changes take effect after a full reboot. Disable any separate SUSFS LKM loader before enabling this option.</string>
 </resources>

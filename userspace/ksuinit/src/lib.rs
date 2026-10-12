@@ -40,13 +40,25 @@ impl<I: Iterator> Iterator for KptrOwnedIter<I> {
 }
 
 pub fn kernel_symbols_iter() -> Result<impl Iterator<Item = (String, u64)>> {
+    kernel_symbols_iter_with_policy(true)
+}
+
+fn kernel_symbols_iter_with_policy(normalize: bool) -> Result<impl Iterator<Item = (String, u64)>> {
     let kptr = Kptr::new()?;
 
     let iter = BufReader::new(File::open("/proc/kallsyms")?)
         .lines()
+        .filter(move |line| {
+            normalize
+                || line
+                    .as_ref()
+                    .ok()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .is_none_or(|kind| kind != "a" && kind != "A")
+        })
         // https://github.com/torvalds/linux/blob/7f87a5ea75f011d2c9bc8ac0167e5e2d1adb1594/kernel/kallsyms.c#L727
         // We can stop read as soon as we read all kernel symbols
-        .map_while(|line| {
+        .map_while(move |line| {
             line.ok().and_then(|line| {
                 let mut splits = line.split_whitespace();
                 splits
@@ -61,6 +73,7 @@ pub fn kernel_symbols_iter() -> Result<impl Iterator<Item = (String, u64)>> {
                                     symbol
                                         .find("$")
                                         .or_else(|| symbol.find(".llvm."))
+                                        .filter(|_| normalize)
                                         .map(|pos| &symbol[0..pos])
                                         .unwrap_or(symbol)
                                         .to_owned(),
@@ -315,11 +328,23 @@ fn replace_module_vermagic(buffer: &mut Vec<u8>, required_vermagic: &str) -> Res
 /// Relocate undefined symbols in an ELF kernel module buffer using /proc/kallsyms,
 /// then load it via init_module syscall.
 pub fn load_module(data: &[u8], params: &CStr) -> Result<()> {
+    load_module_with_policy(data, params, false)
+}
+
+pub fn load_module_checked(data: &[u8], params: &CStr) -> Result<()> {
+    load_module_with_policy(data, params, true)
+}
+
+fn load_module_with_policy(data: &[u8], params: &CStr, strict: bool) -> Result<()> {
     let mut buffer = data.to_vec();
     let elf = Elf::parse(&buffer)?;
     let ctx = *elf.syms.ctx();
 
-    let mut unresolved_symbols: HashMap<String, (Sym, usize)> = HashMap::new();
+    if strict && (!elf.is_64 || elf.header.e_type != goblin::elf::header::ET_REL) {
+        bail!("Expected an ELF64 relocatable kernel module");
+    }
+
+    let mut unresolved_symbols: HashMap<String, Vec<(Sym, usize)>> = HashMap::new();
     for (index, sym) in elf.syms.iter().enumerate() {
         if index == 0 {
             continue;
@@ -334,20 +359,44 @@ pub fn load_module(data: &[u8], params: &CStr) -> Result<()> {
         };
 
         let offset = elf.syms.offset() + index * Sym::size_with(elf.syms.ctx());
-        unresolved_symbols.insert(name.to_owned(), (sym, offset));
+        unresolved_symbols
+            .entry(name.to_owned())
+            .or_default()
+            .push((sym, offset));
     }
 
+    let imported_count: usize = unresolved_symbols.values().map(Vec::len).sum();
     if !unresolved_symbols.is_empty() {
-        for_each_kernel_symbols(|(symbol, addr)| {
-            if let Some((mut sym, offset)) = unresolved_symbols.remove(symbol) {
-                sym.st_shndx = section_header::SHN_ABS as usize;
-                sym.st_value = *addr;
-                buffer.pwrite_with(sym, offset, ctx)?;
+        for (symbol, addr) in kernel_symbols_iter_with_policy(!strict)? {
+            if strict && addr == 0 {
+                continue;
             }
+            if let Some(symbols) = unresolved_symbols.remove(&symbol) {
+                for (mut sym, offset) in symbols {
+                    sym.st_shndx = section_header::SHN_ABS as usize;
+                    sym.st_value = addr;
+                    buffer.pwrite_with(sym, offset, ctx)?;
+                }
+            }
+            if unresolved_symbols.is_empty() {
+                break;
+            }
+        }
+    }
 
-            Ok(!unresolved_symbols.is_empty())
-        })
-        .context("Cannot parse kallsyms")?;
+    if strict && !unresolved_symbols.is_empty() {
+        let mut names = unresolved_symbols
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        bail!("Kernel symbols are missing or hidden: {}", names.join(", "));
+    }
+
+    if strict {
+        log::info!(
+            "Resolved all {imported_count} kernel module imports with nonzero exact symbol addresses"
+        );
     }
 
     for name in unresolved_symbols.keys() {

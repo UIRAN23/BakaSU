@@ -566,4 +566,18 @@
     <string name="module_shortcut_copy_scheme">Копировать URL-схему</string>
     <string name="module_shortcut_scheme_copied">URL-схема скопирована</string>
     <string name="internal_server_error">Ошибка сервера</string>
+    <string name="settings_susfs_lkm">Модуль ядра SUSFS</string>
+    <string name="settings_susfs_lkm_autoload">Загружать SUSFS при запуске</string>
+    <string name="settings_susfs_lkm_autoload_summary">Использовать встроенный модуль ядра SUSFS. По умолчанию выключено.</string>
+    <string name="settings_susfs_lkm_status">Состояние загрузки</string>
+    <string name="settings_susfs_lkm_loaded">Загружен BakaSU</string>
+    <string name="settings_susfs_lkm_already_active">Уже работает другой SUSFS</string>
+    <string name="settings_susfs_lkm_disabled">Автоматическая загрузка выключена</string>
+    <string name="settings_susfs_lkm_pending">Ожидание перезагрузки</string>
+    <string name="settings_susfs_lkm_failed">Ошибка загрузки</string>
+    <string name="settings_susfs_lkm_recovery_disabled">Выключен после неудачного запуска</string>
+    <string name="settings_susfs_lkm_unsupported">Это ядро не поддерживается</string>
+    <string name="settings_susfs_lkm_unavailable">Встроенный модуль недоступен</string>
+    <string name="settings_susfs_lkm_version_summary">%1$s · %2$s</string>
+    <string name="settings_susfs_lkm_reboot_summary">Изменения вступят в силу после полной перезагрузки. Перед включением отключите отдельный загрузчик SUSFS LKM.</string>
 </resources>

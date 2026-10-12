@@ -47,6 +47,51 @@ pub fn version() -> Result<String> {
     }
 }
 
+pub fn probe() -> Result<Option<String>> {
+    let mut info = SusfsVersion {
+        susfs_version: [0; SUSFS_MAX_VERSION_BUFSIZE],
+        err: ERR_CMD_NOT_SUPPORTED,
+    };
+    let result = susfsctl(CMD_SUSFS_SHOW_VERSION, &mut info);
+    if info.err == ERR_CMD_NOT_SUPPORTED && info.susfs_version.iter().all(|byte| *byte == 0) {
+        let error = std::io::Error::last_os_error();
+        if result == -1
+            && matches!(
+                error.raw_os_error(),
+                Some(libc::EINVAL) | Some(libc::ENOSYS)
+            )
+        {
+            let mut variant = SusfsVariant {
+                susfs_variant: [0; SUSFS_MAX_VARIANT_BUFSIZE],
+                err: ERR_CMD_NOT_SUPPORTED,
+            };
+            let result = susfsctl(CMD_SUSFS_SHOW_VARIANT, &mut variant);
+            let error = std::io::Error::last_os_error();
+            if variant.err == ERR_CMD_NOT_SUPPORTED
+                && variant.susfs_variant.iter().all(|byte| *byte == 0)
+                && result == -1
+                && matches!(
+                    error.raw_os_error(),
+                    Some(libc::EINVAL) | Some(libc::ENOSYS)
+                )
+            {
+                return Ok(None);
+            }
+            anyhow::bail!(
+                "A SUSFS variant responded without a recognized version; loading was refused"
+            );
+        }
+        anyhow::bail!("Cannot establish that SUSFS is absent: result={result}, error={error}");
+    }
+    parse_err(CMD_SUSFS_SHOW_VERSION, info.err)?;
+    let version = c_array_to_string(&info.susfs_version);
+    anyhow::ensure!(
+        version.starts_with('v'),
+        "Unrecognized SUSFS version response"
+    );
+    Ok(Some(version))
+}
+
 pub fn variant() -> Result<String> {
     let mut info = SusfsVariant {
         susfs_variant: [0; SUSFS_MAX_VARIANT_BUFSIZE],
